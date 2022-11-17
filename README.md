@@ -6,6 +6,14 @@ Please do pull from it by using:
 
 `Source Control > ... > Pull, Push > Pull From > origin/main`
 
+[Deadlines](/deadlines.md)
+[Goals](/goals.md)
+[Reading List](/reading-list.md)
+
+##### Guides
+[Environment](/guide/environment_set-up.md)
+[GitHub](/guide/using_github.md)
+
 ## Recommended VSCode Extensions
 - biosyntax
 - GitHub Repositories
