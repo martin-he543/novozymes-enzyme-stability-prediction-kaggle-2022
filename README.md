@@ -14,6 +14,7 @@ Please do pull from it by using:
 [Environment](/guide/environment_set-up.md) ·
 [GitHub](/guide/using_github.md)
 
+# Recommendations
 ## Recommended VSCode Extensions
 - biosyntax
 - GitHub Repositories
