@@ -10,9 +10,6 @@
 5. For first couple cycles of training, original layers are frozen.
 6. Unfreeze the layers for the last few epochs.
 
-
-
-
 train.csv - the training data, with columns as follows:
     seq_id: unique identifier of each protein variants
     protein_sequence: amino acid sequence of each protein variant. The stability (as measured by tm) of protein is determined by its protein sequence. (Please note that most of the sequences in the test data have the same length of 221 amino acids, but some of them have 220 because of amino acid deletion.)
