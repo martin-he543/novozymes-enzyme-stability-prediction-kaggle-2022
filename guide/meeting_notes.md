@@ -27,3 +27,15 @@ test.csv - the test data; your task is to predict the target tm for each protein
 sample_submission.csv - a sample submission file in the correct format, with seq_id values corresponding to test.csv
 
 wildtype_structure_prediction_af2.pdb - the 3 dimensional structure of the enzyme listed above, as predicted by AlphaFold
+
+COLUMNS
+Type
+Index
+Atom
+Amino Acid
+Chain Link
+Residue Number
+x, y, z Co-ordinates
+Occupancy Number
+B Factor - related to stability
+Element Single
