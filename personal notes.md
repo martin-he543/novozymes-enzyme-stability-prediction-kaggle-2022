@@ -7,9 +7,13 @@
 
 - <https://github.com/JinyuanSun/mutation-stability-data>
 
-## questions
+## research on self-attention model
 
-see slack
+- <https://bgshin.github.io/assets/pdf/mtdti.pdf>
+- how to relate predicted structure to tm?
+- implementation on this problem <https://www.kaggle.com/code/sgreiner/novo-esp-lstm-ngram-self-attention>
+- search for embedding on protein sequence
+- alphafold -> pdb -> b-factor -> prediction
 
 ## points for improvement
 
