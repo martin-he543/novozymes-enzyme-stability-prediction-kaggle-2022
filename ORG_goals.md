@@ -24,4 +24,7 @@
 - Data processing and future extraction and reductions on the same page
 - Starting from the same data (raw data), use different methods
 
-### Week 2
+### Week 4
+- Implement transformer model
+- Prelimindary data analysis on deletions
+- All members must meet next week Wednesday afternoon
