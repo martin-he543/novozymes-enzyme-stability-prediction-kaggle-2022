@@ -52,7 +52,6 @@ class Transformer(torch.nn.Module):
     def forward(self, x):
         x += self.positional_encodings
         x = torch.transpose(x, 0, 1)
-        print(x.shape)
         q = self.query(x)
         k = self.key(x)
         v = self.value(x)
@@ -67,5 +66,6 @@ class Transformer(torch.nn.Module):
         xfc3 += xfc2
         xfc4 = self.fc4(xfc3)
         xfc4 += xfc3
-        xfc4 = self.fc5(xfc4)
-        return self.fc6(xfc4)
+        xfc4 = torch.transpose(xfc4, 0, 1)
+        xfc5 = self.fc5(xfc4)
+        return self.fc6(xfc5)

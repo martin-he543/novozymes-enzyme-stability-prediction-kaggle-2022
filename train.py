@@ -5,12 +5,12 @@ import torch
 from datetime import datetime
 
 seq_len = 2000
-dim = 512
+dim = 32
 token_dim = 4
 num_tokens = 20
 num_heads = 8
 lr = 0.001
-batch_size = 64
+batch_size = 8
 train_len = 22000
 test_len = 6643
 
@@ -82,7 +82,7 @@ save_interval = 50
 for epoch in range(total_epochs):
     model.train()
     data, labels = get_train_batch()
-    
+
     output = model(data)
     loss = loss_fn(output, labels)
 
