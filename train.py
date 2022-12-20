@@ -1,18 +1,19 @@
 import pandas as pd
 import numpy as np
-from model import Transformer
 import torch
-from datetime import datetime
+from model import Transformer
 
 seq_len = 2000
-dim = 32
 token_dim = 4
 num_tokens = 20
-num_heads = 8
-lr = 0.001
-batch_size = 8
+
 train_len = 22000
 test_len = 6643
+
+dim = 64
+num_heads = 4
+lr = 0.0005
+batch_size = 1
 
 df_train = pd.read_csv("./data/train.csv", index_col="seq_id")
 df_train_updates = pd.read_csv("./data/train_updates_20220929.csv", index_col="seq_id")
@@ -43,9 +44,12 @@ def get_train_batch():
     x_sequence = torch.zeros(batch_size, seq_len, token_dim)
     x_labels = torch.zeros(batch_size,1)
     indexes = np.random.randint(0,train_len, batch_size)
+
     for i in range(batch_size):
-        x_raw = np.array([embeddings[amino_codes.index(x)] for x in all_sequences[indexes[i]]])
-        x_padded = np.pad(x_raw, ((0, seq_len - x_raw.shape[0]%seq_len),(0,0)), "constant")
+        x_raw = np.array([embeddings[amino_codes.index(x)] \
+            for x in all_sequences[indexes[i]]])
+        x_padded = np.pad(x_raw, ((0, seq_len - x_raw.shape[0]%seq_len),(0,0)),\
+             "constant")
         x_sequence[i] = torch.tensor(x_padded)
         x_labels[i] = torch.tensor(all_labels[indexes[i]])
     return x_sequence, x_labels
@@ -55,7 +59,8 @@ def get_test_batch():
     x_labels = torch.zeros(batch_size,1)
     indexes = np.random.randint(train_len,train_len+test_len, batch_size)
     for i in range(batch_size):
-        x_raw = np.array([embeddings[amino_codes.index(x)] for x in all_sequences[indexes[i]]])
+        x_raw = np.array([embeddings[amino_codes.index(x)] \
+            for x in all_sequences[indexes[i]]])
         x_padded = np.pad(x_raw, ((0, seq_len - x_raw.shape[0]%seq_len),(0,0)), "constant")
         x_sequence[i] = torch.tensor(x_padded)
         x_labels[i] = torch.tensor(all_labels[indexes[i]])
@@ -66,8 +71,7 @@ def save_states(model, optim, epoch):
         "model_states" : model.state_dict(),
         "optim_states" : optim.state_dict()
     }
-    time_obj = datetime.now()
-    path = f"./models/model.e{epoch:04}.{time_obj.month}.{time_obj.day}.{time_obj.hour}:{time_obj.minute}:{time_obj.second}.t"
+    path = f"./models/model.torch"
     torch.save(data_dict, path)
 
 def load_states(model, optim, path):
@@ -76,25 +80,31 @@ def load_states(model, optim, path):
     optim.load_state_dict(data_dict["optim_states"])
     return model, optim
 
-total_epochs = 100
-test_interval = 10
-save_interval = 50
+total_epochs = 10
+train_batches = 100
+eval_batches = 10
+best_loss = 10000
 for epoch in range(total_epochs):
     model.train()
-    data, labels = get_train_batch()
-
-    output = model(data)
-    loss = loss_fn(output, labels)
-
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-    if epoch % test_interval == 0:
-        model.eval()
+    train_loss = 0
+    for _ in range(train_batches):
+        data, labels = get_train_batch()
+        output = model(data)
+        loss = loss_fn(output, labels)
+        train_loss += loss.item()
+        optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
+        optimizer.step()
+    train_loss /= train_batches
+    model.eval()
+    eval_loss = 0
+    for _ in range(eval_batches):
         data, labels = get_test_batch()
         output = model(data)
-        eval_loss = loss_fn(output, labels)
-        print('Epoch:', epoch, 'Train loss:', loss.item(), "Eval loss:", eval_loss.item())
-        model.train()
-    if epoch % save_interval == 0:
+        loss = loss_fn(output, labels)
+        eval_loss += loss.item()
+    eval_loss /= eval_batches
+    print('Epoch:', epoch, 'Train loss:', train_loss, "Eval loss:", eval_loss)
+    if eval_loss < best_loss:
         save_states(model, optimizer, epoch)
