@@ -1,83 +1,41 @@
 import pandas as pd
 import numpy as np
 import torch
+import torch.nn as nn
 import datetime
 from torch.utils.tensorboard import SummaryWriter
 import os
-from model import Transformer
+from model import Transformer, positional_encodings
+from data_loader import DataLoader
+import time
+from scipy.stats import spearmanr
+
+torch.set_num_threads(12)
 
 #set sequence constants
-seq_len = 2000
-token_dim = 2
+seq_len = 1024
 num_tokens = 20
 
-#set train-test split
-train_len = 25000
-test_len = 3643
-
 #set transformer properties
-dim = 128
-num_heads = 4
-dropout = 0.5
+d_model = 512
+num_heads = 8
+dropout = 0.25
 
-#set 
-lr = 0.0005
+#set
+lr = 0.0001
+weight_decay = 0.1
 batch_size = 16
-
-df_train = pd.read_csv("./data/train.csv", index_col="seq_id")
-df_train_updates = pd.read_csv("./data/train_updates_20220929.csv", index_col="seq_id")
-
-all_features_nan = df_train_updates.isnull().all("columns")
-
-drop_indices = df_train_updates[all_features_nan].index
-df_train = df_train.drop(index=drop_indices)
-
-swap_ph_tm_indices = df_train_updates[~all_features_nan].index
-df_train.loc[swap_ph_tm_indices, ["pH", "tm"]] = df_train_updates.loc[swap_ph_tm_indices, ["pH", "tm"]]
-
-with open("amino_ranking.txt", "r") as f:
-    amino_codes = f.read().split("\n")
-embeddings = np.random.randn(20,token_dim)
-
-df_train.drop(df_train[[len(x) > seq_len for x in df_train.protein_sequence]].index, inplace=True)
-all_sequences = df_train["protein_sequence"].values
-all_labels = df_train["tm"].values
 
 device = torch.device("cuda:3" if torch.cuda.is_available() else "cpu")
 print(device)
 
-model = Transformer(token_dim, seq_len, num_heads, dim, device, dropout)
-model.to(device)
+model = Transformer(seq_len, num_heads, d_model, device, dropout).to(device)
+pe = positional_encodings(seq_len, d_model).to(device)
 
-optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=0.01)
+loader = DataLoader(seq_len, d_model, batch_size, "embeddings_512.npy", "train-test.pci")
+optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
 loss_fn = torch.nn.MSELoss()
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=1000)
-
-def get_train_batch():
-    x_sequence = torch.zeros(batch_size, seq_len, token_dim).to(device)
-    x_labels = torch.zeros(batch_size, 1, 1).to(device)
-    indexes = np.random.randint(0,train_len, batch_size)
-
-    for i in range(batch_size):
-        x_raw = np.array([embeddings[amino_codes.index(x)] \
-            for x in all_sequences[indexes[i]]])
-        x_padded = np.pad(x_raw, ((0, seq_len - x_raw.shape[0]%seq_len),(0,0)),\
-             "constant")
-        x_sequence[i] = torch.tensor(x_padded)
-        x_labels[i] = torch.tensor(all_labels[indexes[i]])
-    return x_sequence, x_labels
-
-def get_test_batch():
-    x_sequence = torch.zeros(batch_size, seq_len, token_dim).to(device)
-    x_labels = torch.zeros(batch_size, 1, 1).to(device)
-    indexes = np.random.randint(train_len,train_len+test_len, batch_size)
-    for i in range(batch_size):
-        x_raw = np.array([embeddings[amino_codes.index(x)] \
-            for x in all_sequences[indexes[i]]])
-        x_padded = np.pad(x_raw, ((0, seq_len - x_raw.shape[0]%seq_len),(0,0)), "constant")
-        x_sequence[i] = torch.tensor(x_padded)
-        x_labels[i] = torch.tensor(all_labels[indexes[i]])
-    return x_sequence, x_labels
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=1500)
 
 def save_states(model, optim, epoch, train_loss, path):
     data_dict = {
@@ -93,29 +51,39 @@ log_dir = './runs/{:%Y.%m.%d.%H.%M.%S}'.format(datetime.datetime.now())
 writer = SummaryWriter(log_dir=log_dir)
 
 resume_epoch = 0
-#comment the following to not resume
+load_from = ""#models/2022.12.28.07.49.39.torch"#2022.12.26.17.33.34.torch"#"./models/2022.12.26.18.37.20.torch"
+if load_from != "":
+    load_dict = torch.load(load_from)
+    model.load_state_dict(load_dict["model_states"])
+    optimizer.load_state_dict(load_dict["optim_states"])
+    resume_epoch = load_dict["epoch"]
+    for g in optimizer.param_groups:
+        g['lr'] = lr
 
-load_dict = torch.load("./models/2022.12.22.18.06.38.torch")
-model.load_state_dict(load_dict["model_states"])
-optimizer.load_state_dict(load_dict["optim_states"])
-resume_epoch = load_dict["epoch"]
-for g in optimizer.param_groups:
-    g['lr'] = lr
+# 2 GPUs
+# model = nn.DataParallel(model, device_ids = [1,2]).to(device)
 
 total_epochs = 100000
-train_batches = 100
+train_batches = 150
 eval_batches = 10
 best_loss = 10000
 best_saves = []
 last_saves = []
+
+
 for epoch in range(resume_epoch, total_epochs):
+    t0 = time.time()
     model.train()
     optimizer.zero_grad()
     train_loss = 0
     for _ in range(train_batches):
-        data, labels = get_train_batch()
-        output = model(data)
-        loss = loss_fn(output, labels)
+        seq, ph, tm = loader.get_train_batch()
+        seq = seq.to(device)
+        seq += pe
+        ph = ph.to(device)
+        tm = tm.to(device)
+        output = model(seq, ph)
+        loss = loss_fn(output, tm)
         train_loss += loss.item()
         loss.backward()
     #torch.nn.utils.clip_grad_norm_(model.parameters(), 5)
@@ -123,19 +91,31 @@ for epoch in range(resume_epoch, total_epochs):
     train_loss /= train_batches
     model.eval()
     eval_loss = 0
-    for _ in range(eval_batches):
-        data, labels = get_test_batch()
-        output = model(data)
-        loss = loss_fn(output, labels)
+    x = np.ndarray(eval_batches*batch_size)
+    y = np.ndarray(eval_batches*batch_size)
+    for i in range(eval_batches):
+        seq, ph, tm = loader.get_test_batch()
+        x[i*batch_size:(i+1)*batch_size] = tm.squeeze().numpy()
+        seq = seq.to(device)
+        seq += pe
+        ph = ph.to(device)
+        tm = tm.to(device)
+        output = model(seq, ph)
+        loss = loss_fn(output, tm)
         eval_loss += loss.item()
+        y[i*batch_size:(i+1)*batch_size] = output.detach().squeeze().cpu().numpy()
+    r, _ = spearmanr(x, y)
     eval_loss /= eval_batches
+    
     scheduler.step(train_loss)
     for param_group in optimizer.param_groups:
         current_lr = param_group['lr']
-    writer.add_scalar('Train loss', round(train_loss,4), global_step=epoch)
-    writer.add_scalar('Eval loss', round(eval_loss,4), global_step=epoch)
+    writer.add_scalar('Train loss', train_loss, global_step=epoch)
+    writer.add_scalar('Eval loss', eval_loss, global_step=epoch)
     writer.add_scalar('Learning rate', current_lr, global_step=epoch)
-    print('Epoch:', epoch, 'Train loss:', train_loss, "Eval loss:", eval_loss)
+    writer.add_scalar('Spearman', r, global_step=epoch)
+    tf = time.time() - t0
+    print(f"Epoch: {epoch}\tTrain loss: {train_loss:.6f}\tEval loss: {eval_loss:.6f}t Spearman: {r:.3f}\tElapsed: {tf:.2f} s")
     timestamp = '{:%Y.%m.%d.%H.%M.%S}'.format(datetime.datetime.now())
     path = f"./models/{timestamp}.torch"
     if train_loss < best_loss:
